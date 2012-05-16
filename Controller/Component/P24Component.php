@@ -3,8 +3,48 @@ define('P24_ID_SPRZEDAWCY', 15820);
 
 App::uses('Component', 'Controller');
 
-class Przelewy24Component extends Component {
+class P24Component extends Component {
   public $component = array('Session');
+
+  private $controller;
+
+  private $__plugiName = null;
+  private function getPluginName() {
+    if ($this->__plugiName === null) {
+      $file = __FILE__;
+
+      while (basename($file) !== 'Plugin') {
+        $this->__plugiName = basename($file);
+        $file = dirname($file);
+      }
+
+    }
+
+    return $this->__plugiName;
+  }
+
+  private function getHelperSettings() {
+    if (array_key_exists($this->getPluginName().'.P24', $this->controller->helpers)) {
+      return $this->controller->helpers[$this->getPluginName().'.P24']
+        ? $this->controller->helpers[$this->getPluginName().'.P24']
+        : array();
+    } else if (in_array($this->getPluginName().'.P24', $this->controller->helpers)) {
+      return array();
+    } else {
+      return false;
+    }
+  }
+
+  private function setHelperSettings($settings) {
+    $settings = array_merge($settings, $this->getHelperSettings());
+    $this->controller->helpers[$this->getPluginName().'.P24'] = $settings;
+  }
+
+  public function initialize(&$controller) {
+    parent::initialize($controller);
+    $this->controller = $controller;
+    $this->setHelperSettings($this->settings);
+  }
 
   function pay() {
     switch(true) {
