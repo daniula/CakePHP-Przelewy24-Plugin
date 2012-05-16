@@ -1,6 +1,4 @@
 <?php
-define('P24_ID_SPRZEDAWCY', 15820);
-
 App::uses('Component', 'Controller');
 
 class P24Component extends Component {
@@ -37,6 +35,18 @@ class P24Component extends Component {
 
   private function setHelperSettings($settings) {
     $settings = array_merge($settings, $this->getHelperSettings());
+
+    foreach (array('ok', 'error') as $p) {
+      if (!isset($settings['return_url_'.$p])) {
+        $this->settings['return_url_'.$p] = Router::url($this->controller->here.'?p24='.$p, true);
+        $settings['return_url_'.$p] = Router::url($this->controller->here.'?p24='.$p, true);
+      }
+    }
+
+    if (!isset($settings['session_id'])) {
+      $settings['session_id'] = $this->controller->Session->id();
+    }
+
     $this->controller->helpers[$this->getPluginName().'.P24'] = $settings;
   }
 
