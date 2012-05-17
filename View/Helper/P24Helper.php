@@ -50,12 +50,12 @@ class P24Helper extends FormHelper {
     if (!isset($options['url'])) {
       $options['url'] = $this->getSubmitUrl();
     }
-    return parent::create(null, $options = array());
+    return parent::create(null, $options);
   }
 
-  public function hidden($fieldName, $options = array()) {
+  private function prepareInputData($fieldName, $options = array()) {
     if (!isset($options['name'])) {
-      $options['name'] = $fieldName;
+      $options['name'] = 'p24_'.$fieldName;
     }
 
     if (!isset($options['value']) &&
@@ -64,10 +64,18 @@ class P24Helper extends FormHelper {
       $options['value'] = $this->settings[$fieldName];
     }
 
-    return parent::hidden('p24_'.$fieldName, $options);
+    return $options;
   }
 
-  public function session($options = null) {
+  public function input($fieldName, $options = array()) {
+    return parent::input($fieldName, $this->prepareInputData($fieldName, $options));
+  }
+
+  public function hidden($fieldName, $options = array()) {
+    return parent::hidden($fieldName, $this->prepareInputData($fieldName, $options));
+  }
+
+  public function ids($options = null) {
     $result = array();
 
     $result[] = $this->hidden('session_id');
@@ -162,7 +170,7 @@ class P24Helper extends FormHelper {
     return $this->hidden('crc');
   }
 
-  public function optionalFields($settings = null) {
+  public function addressFields($settings = null) {
     $result = array();
 
     $result[] = $this->hidden('klient');
@@ -170,21 +178,42 @@ class P24Helper extends FormHelper {
     $result[] = $this->hidden('kod');
     $result[] = $this->hidden('miasto');
     $result[] = $this->hidden('kraj');
-    $result[] = $this->hidden('email');
+
+    return join("\n", $result);
+  }
+
+  public function optionalFields($settings = null) {
+    $result = array();
 
     $result[] = $this->hidden('language');
+    $result[] = $this->description();
+    $result[] = $this->crc();
 
     return join("\n", $result);
   }
 
   public function requiredFields($settings = null) {
     $result = array();
-    $result[] = $this->session();
+    $result[] = $this->ids();
     $result[] = $this->price();
+    $result[] = $this->input('email');
     $result[] = $this->callbackUrls();
+
     $result[] = $this->paymentMethod(null);
-    $result[] = $this->description();
-    $result[] = $this->crc();
+
+    return join("\n", $result);
+  }
+
+  public function getFields($options = array()) {
+    $result = array();
+
+    while(count($options)) {
+      $method = array_shift($options);
+      if (method_exists($this, $method.'Fields')) {
+        $method .= 'Fields';
+      }
+      $result[] = call_user_method($method, $this);
+    }
     return join("\n", $result);
   }
 
@@ -192,6 +221,7 @@ class P24Helper extends FormHelper {
     $result = array();
     $result[] = $this->requiredFields();
     $result[] = $this->optionalFields();
+    $result[] = $this->addressFields();
     return join("\n", $result);
   }
 }
