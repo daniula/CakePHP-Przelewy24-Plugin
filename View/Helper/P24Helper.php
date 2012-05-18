@@ -22,10 +22,6 @@ class P24Helper extends FormHelper {
     'crc',
   );
 
-  private function getSubmitUrl() {
-    return 'https://secure.przelewy24.pl/index.php';
-  }
-
   public function __construct(View $view, $settings = array()) {
       parent::__construct($view, $settings);
       $this->setSettings($settings);
@@ -49,7 +45,7 @@ class P24Helper extends FormHelper {
       $this->setSettings($settings);
     }
     if (!isset($options['url'])) {
-      $options['url'] = $this->getSubmitUrl();
+      $options['url'] = $this->settings['url'].'/index.php';
     }
     return parent::create(null, $options);
   }
@@ -103,7 +99,7 @@ class P24Helper extends FormHelper {
       App::uses('HttpSocket', 'Network/Http');
       App::uses('Xml', 'Utility');
       $http = new HttpSocket();
-      $http->get('https://secure.przelewy24.pl/external/formy.php', array('id' => $this->settings['id_sprzedawcy']));
+      $http->get($this->settings['url'].'external/formy.php', array('id' => $this->settings['id_sprzedawcy']));
       $response = explode("\n", $http->response->body);
       $payments = array();
       foreach ($response as &$line) {
@@ -140,7 +136,7 @@ class P24Helper extends FormHelper {
 
     if ($useJStag) {
       if (is_null($method)) {
-          $result[] = $this->Html->useTag('javascriptlink', 'https://secure.przelewy24.pl/external/formy.php?id='.$this->settings['id_sprzedawcy'], '');
+          $result[] = $this->Html->useTag('javascriptlink', $this->settings['url'].'external/formy.php?id='.$this->settings['id_sprzedawcy'], '');
           $result[] = $this->Html->useTag('javascriptblock', '', 'm_formy();');
       } else {
           $result[] = $this->hidden('metoda', array('value' => $method));
@@ -160,7 +156,7 @@ class P24Helper extends FormHelper {
   }
 
   public function description($settings = null) {
-    if(Configure::read() == 0) {
+    if(Configure::read('debug') == 0) {
        $result[] = $this->hidden('opis');
     } else {
       $result[] = $this->hidden('opis', array('value' => 'TEST_OK'));

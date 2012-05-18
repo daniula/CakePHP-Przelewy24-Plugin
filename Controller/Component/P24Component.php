@@ -1,5 +1,6 @@
 <?php
 App::uses('Component', 'Controller');
+App::uses('Router', 'Routing');
 
 class P24Component extends Component {
   public $component = array('Session');
@@ -19,6 +20,10 @@ class P24Component extends Component {
     }
 
     return $this->__plugiName;
+  }
+
+  private function getUrl() {
+    return sprintf('https://%s.przelewy24.pl/', (Configure::read('debug') == 0 ? 'secure' : 'sandbox'));
   }
 
   private function getHelperSettings() {
@@ -47,10 +52,6 @@ class P24Component extends Component {
     }
 
     $this->controller->helpers[$this->getPluginName().'.P24'] = $settings;
-    print '<pre>';
-    print_r($this->controller->helpers[$this->getPluginName().'.P24']);
-    print '</pre>';
-
   }
 
   public function initialize(&$controller) {
@@ -61,7 +62,9 @@ class P24Component extends Component {
       $this->settings['session_id'] = $this->controller->Session->id();
     }
 
-
+    if (!isset($this->settings['url'])) {
+      $this->settings['url'] = $this->getUrl();
+    }
 
     $this->setHelperSettings($this->settings);
   }
@@ -108,37 +111,38 @@ class P24Component extends Component {
                   $this->Session->setFlash('Ta transakcja została już zarejestrowana');
                   return $this->redirect(array('action' => 'payin'));
               } else {
-                  $this->Transaction->create(array(
-                      'user_id' => $this->getUserId(),
-                      'order_id' => $this->data['p24_order_id_full'],
-                      'amount' => $this->data['p24_kwota'],
-                      'description' => 'Wpłata',
-                      'finished' => true,
-                      'creditcard' => $this->data['p24_karta'],
-                      'ip' => env('REMOTE_ADDR'),
-                      'error' => null,
-                  ));
+                  // $this->Transaction->create(array(
+                  //     'user_id' => $this->getUserId(),
+                  //     'order_id' => $this->data['p24_order_id_full'],
+                  //     'amount' => $this->data['p24_kwota'],
+                  //     'description' => 'Wpłata',
+                  //     'finished' => true,
+                  //     'creditcard' => $this->data['p24_karta'],
+                  //     'ip' => env('REMOTE_ADDR'),
+                  //     'error' => null,
+                  // ));
+
                   if($this->Transaction->save()) {
                       $cash = intval($this->data['p24_kwota']);
                       $this->User->id = $user_id = $this->getUserId();
                       $this->User->query("UPDATE users SET cash = cash + $cash WHERE id = $user_id");
                       $this->Session->write('loggedin.User.cash', $this->User->field('cash'));
-                      return $this->render('payin-success');
+                      return true;;
                   } else {
-                      sendLog($msg, 'Transaction not saved');
-                      return $this->render('payin-error');
+                      $this->log($msg, 'Transaction not saved');
+                      return false;;
                   }
               }
           } elseif(strtoupper($response[1]) == 'ERR') {
-              sendLog($msg, 'Transaction failed');
-              return $this->render('payin-error');
+              $this->log($msg, 'Transaction failed');
+              return false;;
           } else {
-              sendLog($msg, 'Veryfing transaction failed');
-              return $this->render('payin-error');
+              $this->log($msg, 'Veryfing transaction failed');
+              return false;;
           }
       } else {
-          sendLog($msg, 'Veryfing transaction failed');
-          return $this->render('payin-error');
+          $this->log($msg, 'Veryfing transaction failed');
+          return false;;
       }
   }
 
