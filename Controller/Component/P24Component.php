@@ -43,79 +43,23 @@ class P24Component extends Component {
       }
     }
 
-    if (!isset($settings['session_id'])) {
-      $settings['session_id'] = $this->controller->Session->id();
-    }
-
     $this->controller->helpers[$this->getPluginName().'.P24'] = $settings;
   }
 
   public function initialize(&$controller) {
     parent::initialize($controller);
     $this->controller = $controller;
+
+    if (!isset($this->settings['session_id'])) {
+      $this->settings['session_id'] = $this->controller->Session->id();
+    }
+
+
+
     $this->setHelperSettings($this->settings);
   }
 
-  function pay() {
-    switch(true) {
-        case !empty($this->data['Payin']):
-            return $this->render('payin-confirm-data');
-        break;
-        case !empty($this->data['Confirm']):
-            if(!empty($this->data['Confirm']['remember'])) {
-                list($new_data['User']['imie'], $new_data['User']['nazwisko']) = explode(' ', $this->data['Confirm']['p24_klient']) + array('','');
-
-                $new_data['Usersdetail']['adres'] = $this->data['Confirm']['p24_adres'];
-                $new_data['Usersdetail']['kodpocztowy'] = $this->data['Confirm']['p24_kod'];
-                $new_data['Usersdetail']['miasto'] = $this->data['Confirm']['p24_miasto'];
-                $new_data['Usersdetail']['inny_kraj'] = $this->data['Confirm']['p24_kraj'];
-
-                if($this->Session->read('loggedin.User.imie') != $new_data['User']['imie']
-                    || $this->Session->read('loggedin.User.nazwisko') != $new_data['User']['nazwisko']
-                ) {
-                    $this->User->id = $this->getUserId();
-                    if($this->User->save($new_data['User'])) {
-                        $this->Session->write('loggedin.User.imie', $new_data['User']['imie']);
-                        $this->Session->write('loggedin.User.nazwisko', $new_data['User']['nazwisko']);
-                    }
-                }
-
-                if($this->Session->read('loggedin.Usersdetail.adres') != $new_data['Usersdetail']['adres']
-                    || $this->Session->read('loggedin.Usersdetail.kodpocztowy') != $new_data['Usersdetail']['kodpocztowy']
-                    || $this->Session->read('loggedin.Usersdetail.miasto') != $new_data['Usersdetail']['miasto']
-                    || $this->Session->read('loggedin.Usersdetail.inny_kraj') != $new_data['Usersdetail']['inny_kraj']
-                ) {
-                    $this->User->Usersdetail->id = $this->Session->read('loggedin.Usersdetail.id');
-                    if($this->User->Usersdetail->save($new_data['Usersdetail'])) {
-                        $this->Session->write('loggedin.Usersdetail.adres', $new_data['Usersdetail']['adres']);
-                        $this->Session->write('loggedin.Usersdetail.kodpocztowy', $new_data['Usersdetail']['kodpocztowy']);
-                        $this->Session->write('loggedin.Usersdetail.miasto', $new_data['Usersdetail']['miasto']);
-                        $this->Session->write('loggedin.Usersdetail.inny_kraj', $new_data['Usersdetail']['inny_kraj']);
-                    }
-                }
-            }
-
-            unset($this->data['Confirm']['remember']);
-
-            $this->data = $this->data['Confirm'];
-            $this->data['p24_session_id'] = session_id();
-            $this->data['p24_id_sprzedawcy'] = P24_ID_SPRZEDAWCY;
-            $this->data['p24_return_url_ok'] = Router::url(array('action' => 'payinEnd', 'true'), true);
-            $this->data['p24_return_url_error'] = Router::url(array('action' => 'payinEnd', 'err'), true);
-            $this->data['p24_language'] = 'pl';
-
-            return $this->render('payin-payment');
-        break;
-        default:
-
-        break;
-    }
-  }
-
   function verify() {
-      $this->data = $_POST;
-      $this->data['p24_id_sprzedawcy'] = P24_ID_SPRZEDAWCY;
-
       $params = array();
       $result = array();
       $params[] = "p24_id_sprzedawcy=".$this->data['p24_id_sprzedawcy'];
@@ -191,7 +135,18 @@ class P24Component extends Component {
       }
   }
 
-  private function crc($session_id = null, $seller_id = null, $amount = null, $crckey = null) {
+  public function crc($params = array()) {
+    if (is_numeric($params)) {
+      $params = array('amount' => $params);
+    }
+    $params = array_merge($this->settings, $params);
+    if (!isset($this->settings['crc'])) {
+      $this->settings['crc'] = $this->_crc($params);
+    }
+    return $this->settings['crc'];
+  }
+
+  private function _crc($session_id = null, $seller_id = null, $amount = null, $crckey = null) {
     if (is_array($session_id) && is_null($seller_id) && is_null($amount) && is_null($crckey)) {
       $data = $session_id;
       $session_id = $data['session_id'] ? $data['session_id'] : $data['session'];
@@ -204,7 +159,7 @@ class P24Component extends Component {
       throw new Exception('One of parameters is missing');
     }
 
-
+    return md5(join('|', array($session_id, $seller_id, $amount, $crckey)));
   }
 
 }
