@@ -1,6 +1,7 @@
 <?php
 App::uses('Component', 'Controller');
 App::uses('Router', 'Routing');
+App::uses('HttpSocket', 'Network/Http');
 
 class P24Component extends Component {
   public $component = array('Session');
@@ -54,6 +55,37 @@ class P24Component extends Component {
     $this->controller->helpers[$this->getPluginName().'.P24'] = $settings;
   }
 
+  private function requestPaymentMethods() {
+    if (!$payments = Cache::read('p24.payments')) {
+
+      App::uses('Xml', 'Utility');
+      $http = new HttpSocket();
+      $http->get($this->settings['url'].'external/formy.php', array('id' => $this->settings['id_sprzedawcy']));
+      $response = explode("\n", $http->response->body);
+      $payments = array();
+      foreach ($response as &$line) {
+        if (preg_match('/^OPIS\[([0-9]+)\]=(.+)/', $line, $opis)) {
+          $payments[$opis[1]]['info'] = pl_iconv(preg_replace("/[';]/", '', strip_tags($opis[2])));
+        }
+
+        if (strpos($line, 'm_form') !== false) {
+          $line = str_replace('function m_formy() {document.write("', '', $line);
+          $line = str_replace('");}', '', $line);
+          $line = str_replace('\"', '"', $line);
+          preg_match_all('`(disabled)? /><label for="pf([0-9]+)".*?>(.*?)</label>`', $line, $labels);
+          foreach ($labels[2] as $i => $number) {
+            $payments[$number]['name'] = pl_iconv($labels[3][$i]);
+            $payments[$number]['disabled'] = !empty($labels[1][$i]);
+          }
+        }
+      }
+
+      Cache::write('p24.payments', $payments, '+1 hours');
+    }
+
+    return $payments;
+  }
+
   public function initialize(&$controller) {
     parent::initialize($controller);
     $this->controller = $controller;
@@ -66,84 +98,94 @@ class P24Component extends Component {
       $this->settings['url'] = $this->getUrl();
     }
 
+    if (!isset($this->settings['payments'])) {
+      $this->settings['payments'] = $this->requestPaymentMethods();
+    }
+
     $this->setHelperSettings($this->settings);
   }
 
-  function verify() {
-      $params = array();
-      $result = array();
-      $params[] = "p24_id_sprzedawcy=".$this->data['p24_id_sprzedawcy'];
-      $params[] = "p24_session_id=".$this->data['p24_session_id'];
-      $params[] = "p24_order_id=".$this->data['p24_order_id'];
-      $params[] = "p24_kwota=".$this->data['p24_kwota'];
+  function verify($data = null) {
+    if (is_null($data)) {
+      $data = $this->controller->request->data;
+    }
 
-      $ch = curl_init();
-      curl_setopt($ch, CURLOPT_POST,1);
-      if(count($params)) {
-          curl_setopt($ch, CURLOPT_POSTFIELDS, join("&",$params));
-          curl_setopt($ch, CURLOPT_URL, "https://secure.przelewy24.pl/transakcja.php");
-      }
-      curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-      curl_setopt($ch, CURLOPT_USERAGENT, "Mozilla/4.0 (compatible; MSIE 5.01; Windows NT 5.0)");
-      curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-      curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
-      $response = explode("\r\n", curl_exec ($ch));
-      curl_close ($ch);
+    $result = array();
 
-      $msg = array();
-      $msg[] = 'POST:';
-      foreach($this->data as $key => $value) {
-          $msg[] = $key.': '.$value;
-      }
-      $msg[] = '';
-      $msg[] = 'Response:';
-      $msg = array_merge($msg, $response);
 
-      if(strtoupper($response[1]) == strtoupper($success)
-          && $this->data['p24_session_id'] == session_id()
-          && $this->data['p24_id_sprzedawcy'] == 9722
-      ) {
-          if(strtoupper($response[1]) == 'TRUE') {
-              if(Configure::read() > 0) {
-                  $this->data['p24_order_id_full'] += rand(0,1000);
-              }
-              if($this->Transaction->find('count', array('conditions' => array('order_id' => $this->data['p24_order_id_full'])))) {
-                  $this->Session->setFlash('Ta transakcja została już zarejestrowana');
-                  return $this->redirect(array('action' => 'payin'));
-              } else {
-                  // $this->Transaction->create(array(
-                  //     'user_id' => $this->getUserId(),
-                  //     'order_id' => $this->data['p24_order_id_full'],
-                  //     'amount' => $this->data['p24_kwota'],
-                  //     'description' => 'Wpłata',
-                  //     'finished' => true,
-                  //     'creditcard' => $this->data['p24_karta'],
-                  //     'ip' => env('REMOTE_ADDR'),
-                  //     'error' => null,
-                  // ));
 
-                  if($this->Transaction->save()) {
-                      $cash = intval($this->data['p24_kwota']);
-                      $this->User->id = $user_id = $this->getUserId();
-                      $this->User->query("UPDATE users SET cash = cash + $cash WHERE id = $user_id");
-                      $this->Session->write('loggedin.User.cash', $this->User->field('cash'));
-                      return true;;
-                  } else {
-                      $this->log($msg, 'Transaction not saved');
-                      return false;;
-                  }
-              }
-          } elseif(strtoupper($response[1]) == 'ERR') {
-              $this->log($msg, 'Transaction failed');
-              return false;;
-          } else {
-              $this->log($msg, 'Veryfing transaction failed');
-              return false;;
-          }
-      } else {
-          $this->log($msg, 'Veryfing transaction failed');
-          return false;;
-      }
+    $params[] = "p24_id_sprzedawcy=".$this->data['p24_id_sprzedawcy'];
+    $params[] = "p24_session_id=".$this->data['p24_session_id'];
+    $params[] = "p24_order_id=".$this->data['p24_order_id'];
+    $params[] = "p24_kwota=".$this->data['p24_kwota'];
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_POST,1);
+    if(count($params)) {
+        curl_setopt($ch, CURLOPT_POSTFIELDS, join("&",$params));
+        curl_setopt($ch, CURLOPT_URL, "https://secure.przelewy24.pl/transakcja.php");
+    }
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+    curl_setopt($ch, CURLOPT_USERAGENT, "Mozilla/4.0 (compatible; MSIE 5.01; Windows NT 5.0)");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
+    $response = explode("\r\n", curl_exec ($ch));
+    curl_close ($ch);
+
+    $msg = array();
+    $msg[] = 'POST:';
+    foreach($this->data as $key => $value) {
+        $msg[] = $key.': '.$value;
+    }
+    $msg[] = '';
+    $msg[] = 'Response:';
+    $msg = array_merge($msg, $response);
+
+    if(strtoupper($response[1]) == strtoupper($success)
+        && $this->data['p24_session_id'] == session_id()
+        && $this->data['p24_id_sprzedawcy'] == 9722
+    ) {
+        if(strtoupper($response[1]) == 'TRUE') {
+            if(Configure::read() > 0) {
+                $this->data['p24_order_id_full'] += rand(0,1000);
+            }
+            if($this->Transaction->find('count', array('conditions' => array('order_id' => $this->data['p24_order_id_full'])))) {
+                $this->Session->setFlash('Ta transakcja została już zarejestrowana');
+                return $this->redirect(array('action' => 'payin'));
+            } else {
+                // $this->Transaction->create(array(
+                //     'user_id' => $this->getUserId(),
+                //     'order_id' => $this->data['p24_order_id_full'],
+                //     'amount' => $this->data['p24_kwota'],
+                //     'description' => 'Wpłata',
+                //     'finished' => true,
+                //     'creditcard' => $this->data['p24_karta'],
+                //     'ip' => env('REMOTE_ADDR'),
+                //     'error' => null,
+                // ));
+
+                if($this->Transaction->save()) {
+                    $cash = intval($this->data['p24_kwota']);
+                    $this->User->id = $user_id = $this->getUserId();
+                    $this->User->query("UPDATE users SET cash = cash + $cash WHERE id = $user_id");
+                    $this->Session->write('loggedin.User.cash', $this->User->field('cash'));
+                    return true;;
+                } else {
+                    $this->log($msg, 'Transaction not saved');
+                    return false;;
+                }
+            }
+        } elseif(strtoupper($response[1]) == 'ERR') {
+            $this->log($msg, 'Transaction failed');
+            return false;;
+        } else {
+            $this->log($msg, 'Veryfing transaction failed');
+            return false;;
+        }
+    } else {
+        $this->log($msg, 'Veryfing transaction failed');
+        return false;;
+    }
   }
 
   public function crc($params = array()) {

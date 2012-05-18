@@ -20,6 +20,8 @@ class P24Helper extends FormHelper {
     'metoda',
     'opis',
     'crc',
+    'url',
+    'payments',
   );
 
   public function __construct(View $view, $settings = array()) {
@@ -44,6 +46,7 @@ class P24Helper extends FormHelper {
     if ($settings !== null) {
       $this->setSettings($settings);
     }
+
     if (!isset($options['url'])) {
       $options['url'] = $this->settings['url'].'/index.php';
     }
@@ -94,37 +97,6 @@ class P24Helper extends FormHelper {
     return join("\n", $result);
   }
 
-  private function requestPaymentMethods() {
-    if (!$payments = Cache::read('p24.payments')) {
-      App::uses('HttpSocket', 'Network/Http');
-      App::uses('Xml', 'Utility');
-      $http = new HttpSocket();
-      $http->get($this->settings['url'].'external/formy.php', array('id' => $this->settings['id_sprzedawcy']));
-      $response = explode("\n", $http->response->body);
-      $payments = array();
-      foreach ($response as &$line) {
-        if (preg_match('/^OPIS\[([0-9]+)\]=(.+)/', $line, $opis)) {
-          $payments[$opis[1]]['info'] = pl_iconv(preg_replace("/[';]/", '', strip_tags($opis[2])));
-        }
-
-        if (strpos($line, 'm_form') !== false) {
-          $line = str_replace('function m_formy() {document.write("', '', $line);
-          $line = str_replace('");}', '', $line);
-          $line = str_replace('\"', '"', $line);
-          preg_match_all('`(disabled)? /><label for="pf([0-9]+)".*?>(.*?)</label>`', $line, $labels);
-          foreach ($labels[2] as $i => $number) {
-            $payments[$number]['name'] = pl_iconv($labels[3][$i]);
-            $payments[$number]['disabled'] = !empty($labels[1][$i]);
-          }
-        }
-      }
-
-      Cache::write('p24.payments', $payments);
-    }
-
-    return $payments;
-  }
-
   private function _createPaymentInput($id, $desc, $disabled = false) {
     return $this->Html->useTag('radio', 'p24_metoda', 'pf'.$id, ' value="'.$id.'"'.($disabled ? ' disabled' : ''),
        $this->Html->useTag('label', 'pf'.$id, '', $desc)
@@ -134,7 +106,7 @@ class P24Helper extends FormHelper {
   public function paymentMethod($method = null, $useJStag = false) {
     $result = array();
 
-    if ($useJStag) {
+    if ($useJStag || empty($this->settings['payments'])) {
       if (is_null($method)) {
           $result[] = $this->Html->useTag('javascriptlink', $this->settings['url'].'external/formy.php?id='.$this->settings['id_sprzedawcy'], '');
           $result[] = $this->Html->useTag('javascriptblock', '', 'm_formy();');
@@ -142,7 +114,7 @@ class P24Helper extends FormHelper {
           $result[] = $this->hidden('metoda', array('value' => $method));
       }
     } else {
-      $payments = $this->requestPaymentMethods();
+      $payments = $this->settings['payments'];
       if (!is_null($method)) {
         $result[] = $this->_createPaymentInput($method, $payments[$method]['name'], $payments[$method]['disabled']);
         unset($payments[$method]);
