@@ -33,7 +33,10 @@ class P24Component extends Component {
     }
   }
 
-  private function setHelperSettings($settings) {
+  private function setHelperSettings($settings = null) {
+    if (is_null($settings)) {
+      $settings = $this->settings;
+    }
     $settings = array_merge($settings, $this->getHelperSettings());
 
     foreach (array('ok', 'error') as $p) {
@@ -44,6 +47,10 @@ class P24Component extends Component {
     }
 
     $this->controller->helpers[$this->getPluginName().'.P24'] = $settings;
+    print '<pre>';
+    print_r($this->controller->helpers[$this->getPluginName().'.P24']);
+    print '</pre>';
+
   }
 
   public function initialize(&$controller) {
@@ -139,27 +146,29 @@ class P24Component extends Component {
     if (is_numeric($params)) {
       $params = array('amount' => $params);
     }
+
     $params = array_merge($this->settings, $params);
     if (!isset($this->settings['crc'])) {
       $this->settings['crc'] = $this->_crc($params);
     }
+    $this->setHelperSettings();
     return $this->settings['crc'];
   }
 
-  private function _crc($session_id = null, $seller_id = null, $amount = null, $crckey = null) {
-    if (is_array($session_id) && is_null($seller_id) && is_null($amount) && is_null($crckey)) {
+  private function _crc($session_id = null, $seller_id = null, $amount = null, $hash = null) {
+    if (is_array($session_id) && is_null($seller_id) && is_null($amount) && is_null($hash)) {
       $data = $session_id;
-      $session_id = $data['session_id'] ? $data['session_id'] : $data['session'];
-      $seller_id = $data['seller_id'] ? $data['seller_id'] : $data['seller'];
+      $session_id = $data['session_id'];
+      $seller_id = $data['id_sprzedawcy'];
       $amount = $data['amount'];
-      $crckey = $data['crckey'] ? $data['crckey'] : $data['crc'];
+      $hash = $data['hash'];
     }
 
-    if (in_array(null, array($session_id, $seller_id, $amount, $crckey))) {
+    if (in_array(null, array($session_id, $seller_id, $amount, $hash))) {
       throw new Exception('One of parameters is missing');
     }
 
-    return md5(join('|', array($session_id, $seller_id, $amount, $crckey)));
+    return md5(join('|', array($session_id, $seller_id, $amount, $hash)));
   }
 
 }

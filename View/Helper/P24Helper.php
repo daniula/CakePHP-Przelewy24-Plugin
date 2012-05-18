@@ -19,6 +19,7 @@ class P24Helper extends FormHelper {
     'return_url_error',
     'metoda',
     'opis',
+    'crc',
   );
 
   private function getSubmitUrl() {
