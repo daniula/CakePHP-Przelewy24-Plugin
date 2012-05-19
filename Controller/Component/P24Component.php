@@ -167,23 +167,6 @@ class P24Component extends Component {
         return false;
       break;
     }
-
-      // if($this->Transaction->find('count', array('conditions' => array('order_id' => $this->data['p24_order_id_full'])))) {
-          // $this->Session->setFlash('Ta transakcja została już zarejestrowana');
-          // return $this->redirect(array('action' => 'payin'));
-      // } else {
-        // $this->Transaction->create(array(
-        //     'user_id' => $this->getUserId(),
-        //     'order_id' => $this->data['p24_order_id_full'],
-        //     'amount' => $this->data['p24_kwota'],
-        //     'description' => 'Wpłata',
-        //     'finished' => true,
-        //     'creditcard' => $this->data['p24_karta'],
-        //     'ip' => env('REMOTE_ADDR'),
-        //     'error' => null,
-        // ));
-      // }
-
   }
 
   public function crc($params = null) {
