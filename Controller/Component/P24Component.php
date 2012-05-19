@@ -86,12 +86,21 @@ class P24Component extends Component {
     return $payments;
   }
 
+  public function updateSessionId($pushToHelper = true) {
+    $this->settings['session_id'] = $this->controller->Session->id();
+    if ($pushToHelper) {
+      $this->setHelperSettings();
+    }
+  }
+
   public function initialize(&$controller) {
     parent::initialize($controller);
     $this->controller = $controller;
+  }
 
+  public function init() {
     if (!isset($this->settings['session_id'])) {
-      $this->settings['session_id'] = $this->controller->Session->id();
+      $this->updateSessionId(false);
     }
 
     if (!isset($this->settings['url'])) {
@@ -102,95 +111,92 @@ class P24Component extends Component {
       $this->settings['payments'] = $this->requestPaymentMethods();
     }
 
+    if (isset($this->settings['kwota']) && !isset($this->settings['crc'])) {
+      $this->crc();
+    }
+
     $this->setHelperSettings($this->settings);
   }
 
-  function verify($data = null) {
+  public function log($message, $attachSettings = true, $type = LOG_ERROR) {
+    if ($attachSettings) {
+      $settings = $this->settings;
+      unset($settings['payments']);
+      parent::log(array($message) + $settings, $type);
+    } else {
+      parent::log($message, $type);
+    }
+  }
+
+  public function verify($data = null) {
     if (is_null($data)) {
       $data = $this->controller->request->data;
     }
 
-    $result = array();
-
-
-
-    $params[] = "p24_id_sprzedawcy=".$this->data['p24_id_sprzedawcy'];
-    $params[] = "p24_session_id=".$this->data['p24_session_id'];
-    $params[] = "p24_order_id=".$this->data['p24_order_id'];
-    $params[] = "p24_kwota=".$this->data['p24_kwota'];
-
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_POST,1);
-    if(count($params)) {
-        curl_setopt($ch, CURLOPT_POSTFIELDS, join("&",$params));
-        curl_setopt($ch, CURLOPT_URL, "https://secure.przelewy24.pl/transakcja.php");
+    if ($this->remoteCRC($data) !== $data['p24_crc']) {
+      $this->log('CRC value is incorrect');
+      return false;
     }
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-    curl_setopt($ch, CURLOPT_USERAGENT, "Mozilla/4.0 (compatible; MSIE 5.01; Windows NT 5.0)");
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
-    $response = explode("\r\n", curl_exec ($ch));
-    curl_close ($ch);
 
-    $msg = array();
-    $msg[] = 'POST:';
-    foreach($this->data as $key => $value) {
-        $msg[] = $key.': '.$value;
+    foreach (array('session_id', 'id_sprzedawcy') as $p) {
+      if ($this->settings[$p] !== $data['p24_'.$p]) {
+        $this->log('Values of '.$p.' don\'t match');
+        return false;
+      }
     }
-    $msg[] = '';
-    $msg[] = 'Response:';
-    $msg = array_merge($msg, $response);
 
-    if(strtoupper($response[1]) == strtoupper($success)
-        && $this->data['p24_session_id'] == session_id()
-        && $this->data['p24_id_sprzedawcy'] == 9722
-    ) {
-        if(strtoupper($response[1]) == 'TRUE') {
-            if(Configure::read() > 0) {
-                $this->data['p24_order_id_full'] += rand(0,1000);
-            }
-            if($this->Transaction->find('count', array('conditions' => array('order_id' => $this->data['p24_order_id_full'])))) {
-                $this->Session->setFlash('Ta transakcja została już zarejestrowana');
-                return $this->redirect(array('action' => 'payin'));
-            } else {
-                // $this->Transaction->create(array(
-                //     'user_id' => $this->getUserId(),
-                //     'order_id' => $this->data['p24_order_id_full'],
-                //     'amount' => $this->data['p24_kwota'],
-                //     'description' => 'Wpłata',
-                //     'finished' => true,
-                //     'creditcard' => $this->data['p24_karta'],
-                //     'ip' => env('REMOTE_ADDR'),
-                //     'error' => null,
-                // ));
+    $http = new HttpSocket();
+    $result = $http->post($this->settings['url'].'transakcja.php', $data);
+    $result = explode("\n", $result->body);
 
-                if($this->Transaction->save()) {
-                    $cash = intval($this->data['p24_kwota']);
-                    $this->User->id = $user_id = $this->getUserId();
-                    $this->User->query("UPDATE users SET cash = cash + $cash WHERE id = $user_id");
-                    $this->Session->write('loggedin.User.cash', $this->User->field('cash'));
-                    return true;;
-                } else {
-                    $this->log($msg, 'Transaction not saved');
-                    return false;;
-                }
-            }
-        } elseif(strtoupper($response[1]) == 'ERR') {
-            $this->log($msg, 'Transaction failed');
-            return false;;
+    switch (strtoupper($result[1])) {
+      case 'TRUE':
+        if (isset($this->settings['store'])) {
+          list($model, $method) = $this->settings['store'];
+          return call_user_method_array($method, $this->controller->{$model}, $data);
         } else {
-            $this->log($msg, 'Veryfing transaction failed');
-            return false;;
+          return true;
         }
-    } else {
-        $this->log($msg, 'Veryfing transaction failed');
-        return false;;
+      break;
+      case 'ERR':
+        $this->log('Error: '.$result[2]);
+        return false;
+      break;
+      default:
+        $this->log(array('Unknown error') + $result);
+        return false;
+      break;
     }
+
+      // if($this->Transaction->find('count', array('conditions' => array('order_id' => $this->data['p24_order_id_full'])))) {
+          // $this->Session->setFlash('Ta transakcja została już zarejestrowana');
+          // return $this->redirect(array('action' => 'payin'));
+      // } else {
+        // $this->Transaction->create(array(
+        //     'user_id' => $this->getUserId(),
+        //     'order_id' => $this->data['p24_order_id_full'],
+        //     'amount' => $this->data['p24_kwota'],
+        //     'description' => 'Wpłata',
+        //     'finished' => true,
+        //     'creditcard' => $this->data['p24_karta'],
+        //     'ip' => env('REMOTE_ADDR'),
+        //     'error' => null,
+        // ));
+      // }
+
   }
 
-  public function crc($params = array()) {
+  public function crc($params = null) {
     if (is_numeric($params)) {
       $params = array('amount' => $params);
+    }
+
+    if (is_null($params)) {
+      if (isset($this->settings['kwota'])) {
+        $params = array('amount' => $this->settings['kwota']);
+      } else {
+        $params = array();
+      }
     }
 
     $params = array_merge($this->settings, $params);
@@ -199,6 +205,15 @@ class P24Component extends Component {
     }
     $this->setHelperSettings();
     return $this->settings['crc'];
+  }
+
+  public function remoteCRC($data) {
+    return $this->_crc(
+      $data['p24_session_id'],
+      $data['p24_order_id'],
+      $data['p24_kwota'],
+      $this->settings['hash']
+    );
   }
 
   private function _crc($session_id = null, $seller_id = null, $amount = null, $hash = null) {
