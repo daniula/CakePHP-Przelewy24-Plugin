@@ -48,7 +48,7 @@ class P24Helper extends FormHelper {
     }
 
     if (!isset($options['url'])) {
-      $options['url'] = $this->settings['url'].'/index.php';
+      $options['url'] = $this->settings['url'].'index.php';
     }
     return parent::create(null, $options);
   }
@@ -128,7 +128,7 @@ class P24Helper extends FormHelper {
   }
 
   public function description($settings = null) {
-    if(Configure::read('debug') == 0) {
+    if(Configure::read('debug') == 0 || $settings === true) {
        $result[] = $this->hidden('opis');
     } else {
       $result[] = $this->hidden('opis', array('value' => 'TEST_OK'));
