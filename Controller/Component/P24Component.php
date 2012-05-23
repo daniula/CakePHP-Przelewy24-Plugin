@@ -129,9 +129,11 @@ class P24Component extends Component {
   }
 
   public function verify($data = null) {
+    $request = $this->controller->request;
     if (is_null($data)) {
-      $data = $this->controller->request->data;
+      $data = $request->data;
     }
+
 
     if ($this->remoteCRC($data) !== $data['p24_crc']) {
       $this->log('CRC value is incorrect');
@@ -149,11 +151,12 @@ class P24Component extends Component {
     $result = $http->post($this->settings['url'].'transakcja.php', $data);
     $result = explode("\n", $result->body);
 
+
     switch (strtoupper($result[1])) {
       case 'TRUE':
         if (isset($this->settings['store'])) {
           list($model, $method) = $this->settings['store'];
-          return call_user_method_array($method, $this->controller->{$model}, $data);
+          return call_user_method_array($method, $this->controller->{$model}, array($data, $request));
         } else {
           return true;
         }
