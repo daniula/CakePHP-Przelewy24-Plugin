@@ -8,19 +8,19 @@ class P24Component extends Component {
 
   private $controller;
 
-  private $__plugiName = null;
+  private $__pluginName = null;
   private function getPluginName() {
-    if ($this->__plugiName === null) {
+    if ($this->__pluginName === null) {
       $file = __FILE__;
 
       while (basename($file) !== 'Plugin') {
-        $this->__plugiName = basename($file);
+        $this->__pluginName = basename($file);
         $file = dirname($file);
       }
 
     }
 
-    return $this->__plugiName;
+    return $this->__pluginName;
   }
 
   private function getUrl() {
